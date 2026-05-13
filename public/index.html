@@ -110,8 +110,11 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
 .act-btn:active{background:var(--fill);color:var(--t1)}
 
 /* ── MOBILE BOTTOM BAR ── */
-.bar{padding:8px 12px calc(var(--si-bot) + 8px);background:var(--card);
-  border-top:.5px solid var(--sep);flex-shrink:0}
+.bar{position:fixed;bottom:0;left:0;right:0;z-index:50;
+  padding:8px 12px calc(var(--si-bot) + 8px);background:var(--card);
+  border-top:.5px solid var(--sep)}
+/* push week content above the bar */
+.week-scroll{padding-bottom:110px!important}
 .bar-days{display:flex;gap:5px;overflow-x:auto;padding-bottom:7px;scrollbar-width:none}
 .bar-days::-webkit-scrollbar{display:none}
 .day-chip{border:none;border-radius:100px;padding:5px 11px;font-family:inherit;
@@ -223,6 +226,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
 
   /* Hide mobile bar on desktop */
   .bar{display:none}
+  .week-scroll{padding-bottom:0!important}
 }
 </style>
 </head>
@@ -378,11 +382,11 @@ function changeWeek(dir) {
 async function loadWeek() {
   document.getElementById('weekView').innerHTML='<div class="spin-wrap"><div class="spin"></div></div>';
   const days = weekDays(weekMonday);
-  const from = toISO(days[0]), to = toISO(days[6]);
+  const from = toISO(days[0]), to = toISO(days[days.length-1]);
 
   const opts = {day:'numeric',month:'long'};
   document.getElementById('weekLabel').textContent =
-    days[0].toLocaleDateString('ru-RU',opts)+' – '+days[6].toLocaleDateString('ru-RU',{...opts,year:'numeric'});
+    days[0].toLocaleDateString('ru-RU',opts)+' – '+days[days.length-1].toLocaleDateString('ru-RU',{...opts,year:'numeric'});
 
   try {
     const r = await fetch(`${apiUrl()}&from=${from}&to=${to}`, {headers:apiHdr()});
@@ -402,8 +406,11 @@ async function loadWeek() {
 }
 
 // ── RENDER ──
-const dayNames   = ['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
-const dayNamesS  = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+// getDay(): 0=Вс,1=Пн,2=Вт,3=Ср,4=Чт,5=Пт,6=Сб
+const _dn  = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+const _dns = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+function dayName(d)  { return _dn[d.getDay()]; }
+function dayNameS(d) { return _dns[d.getDay()]; }
 
 function taskHtml(t) {
   return `<div class="task-row" data-id="${t.id}">
@@ -437,11 +444,11 @@ function renderWeek() {
 
     const hdr = isDesktop
       ? `<div class="day-sec-hdr">
-           <span class="day-name">${dayNamesS[i]}${isToday?' <span class="today-badge">сегодня</span>':''}</span>
+           <span class="day-name">${dayNameS(d)}${isToday?' <span class="today-badge">сегодня</span>':''}</span>
            <span class="day-date-sub">${d.getDate()}</span>
          </div>`
       : `<div class="day-sec-hdr">
-           <span class="day-name">${dayNames[i]}, ${dateStr}</span>
+           <span class="day-name">${dayName(d)}, ${dateStr}</span>
            ${isToday?'<span class="today-badge">сегодня</span>':''}
            ${dayTasks.length?`<span class="day-count">${pending.length}/${dayTasks.length}</span>`:''}
          </div>`;
@@ -519,11 +526,11 @@ async function moveTask(id, newDay) {
 
 // ── BAR DAYS (mobile) ──
 function renderBarDays() {
-  const days = weekDays(weekMonday);
-  document.getElementById('barDays').innerHTML = days.map((d,i) => {
+  const days = weekDays(weekMonday, 7);
+  document.getElementById('barDays').innerHTML = days.map(d => {
     const iso = toISO(d);
     return `<button class="day-chip${iso===addDay?' active':''}" onclick="setAddDay('${iso}')">
-      ${dayNamesS[i]} ${d.getDate()}
+      ${dayNameS(d)} ${d.getDate()}
     </button>`;
   }).join('');
 }
@@ -544,12 +551,12 @@ function openEdit(id) {
   const t = allTasks.find(x=>x.id===id); if(!t) return;
   document.getElementById('editText').value = t.text;
   document.getElementById('editTime').value = t.time||'';
-  const days = weekDays(weekMonday);
-  document.getElementById('editPicker').innerHTML = days.map((d,i)=>{
+  const days = weekDays(weekMonday, 7);
+  document.getElementById('editPicker').innerHTML = days.map(d=>{
     const iso=toISO(d);
     return `<button class="picker-chip${iso===t.day?' active':''}"
       onclick="pickerSel(this,'editPicker')" data-day="${iso}">
-      ${dayNamesS[i]} ${d.getDate()}</button>`;
+      ${dayNameS(d)} ${d.getDate()}</button>`;
   }).join('');
   document.getElementById('editOverlay').classList.remove('hidden');
   setTimeout(()=>document.getElementById('editText').focus(),100);
