@@ -1,0 +1,13 @@
+export const env = {
+  TELEGRAM_TOKEN: process.env.TELEGRAM_TOKEN ?? '',
+  GROQ_API_KEY: process.env.GROQ_API_KEY ?? '',
+  SUPABASE_URL: process.env.SUPABASE_URL ?? '',
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
+  TELEGRAM_WEBHOOK_SECRET: process.env.TELEGRAM_WEBHOOK_SECRET ?? '',
+};
+
+export function validateEnv(): void {
+  for (const [key, value] of Object.entries(env)) {
+    if (!value) throw new Error(`Отсутствует переменная окружения: ${key}`);
+  }
+}
