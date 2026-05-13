@@ -139,7 +139,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
 @keyframes mic-pulse{0%,100%{transform:scale(1.12)}50%{transform:scale(1.22)}}
 .load-more-btn{display:block;width:calc(100% - 24px);margin:12px 12px 16px;
   padding:13px;background:var(--fill);border:none;border-radius:14px;
-  font-size:15px;font-weight:600;font-family:inherit;color:var(--t2);cursor:pointer}
+  font-size:15px;font-weight:600;font-family:inherit;color:var(--t2);cursor:pointer;
+  grid-column:1/-1}
 .load-more-btn:active{opacity:.7}
 
 /* ── SHEET ── */
@@ -298,25 +299,9 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
     </div>
   </div>
 
-  <!-- Calendar picker -->
-  <div class="overlay hidden" id="calOverlay" onclick="if(event.target===this)closeCalendar()">
-    <div class="sheet">
-      <div class="sheet-drag"></div>
-      <div class="cal-nav">
-        <button class="cal-nav-btn" onclick="calPrev()">‹</button>
-        <span class="cal-nav-title" id="calMonthLabel"></span>
-        <button class="cal-nav-btn" onclick="calNext()">›</button>
-      </div>
-      <div class="cal-dow">
-        <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span>
-        <span>Пт</span><span>Сб</span><span>Вс</span>
-      </div>
-      <div id="calGrid" class="cal-grid"></div>
-      <div style="margin-top:16px">
-        <button class="sheet-btn cancel" onclick="closeCalendar()">Закрыть</button>
-      </div>
-    </div>
-  </div>
+  <!-- Native date picker (hidden) -->
+  <input type="date" id="datePicker" style="position:fixed;opacity:0;pointer-events:none;top:0;left:0;width:1px;height:1px"
+    onchange="jumpToDate(this.value)">
 
   <!-- Delete sheet -->
   <div class="overlay hidden" id="delOverlay" onclick="if(event.target===this)closeDelete()">
@@ -358,7 +343,7 @@ let allTasks = [];
 let weekMonday = getMonday(new Date());
 let addDay = toISO(new Date());
 let editId = null, delId = null;
-let mobileWeeks = 3;
+let mobileWeeks = 4;
 let mediaRecorder = null, audioChunks = [], isRecording = false, micStream = null;
 
 // ── INIT ──
@@ -512,18 +497,14 @@ function renderWeek() {
     </div>`;
   }).join('');
 
-  if (!isDesktop) {
-    document.getElementById('weekView').insertAdjacentHTML('beforeend',
-      `<button class="load-more-btn" onclick="loadMoreWeeks()">Загрузить ещё →</button>`);
-  }
+  document.getElementById('weekView').insertAdjacentHTML('beforeend',
+    `<button class="load-more-btn" onclick="loadMoreWeeks()">Загрузить ещё →</button>`);
 
   initDragDrop();
 
-  // Scroll to today on mobile
-  if (!isDesktop) {
-    const el = document.getElementById(`tl-${todayISO}`);
-    if (el) setTimeout(()=>el.closest('.day-sec').scrollIntoView({behavior:'smooth',block:'start'}),100);
-  }
+  // Scroll to today
+  const elToday = document.getElementById(`tl-${todayISO}`);
+  if (elToday) setTimeout(()=>elToday.closest('.day-sec').scrollIntoView({behavior:'smooth',block:'start'}),150);
 }
 
 async function loadMoreWeeks() {
@@ -670,51 +651,18 @@ async function colAddKey(e, day) {
   finally { inp.disabled=false; inp.focus(); }
 }
 
-// ── CALENDAR PICKER ──
-let calMonth = new Date();
-
+// ── DATE PICKER ──
 function openCalendar() {
-  calMonth = new Date(weekMonday.getFullYear(), weekMonday.getMonth(), 1);
-  renderCal();
-  document.getElementById('calOverlay').classList.remove('hidden');
-}
-function closeCalendar() { document.getElementById('calOverlay').classList.add('hidden'); }
-function calPrev() { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth()-1, 1); renderCal(); }
-function calNext() { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth()+1, 1); renderCal(); }
-
-function renderCal() {
-  const y = calMonth.getFullYear(), m = calMonth.getMonth();
-  document.getElementById('calMonthLabel').textContent =
-    new Date(y, m, 1).toLocaleDateString('ru-RU', {month:'long', year:'numeric'});
-
-  let dow = new Date(y, m, 1).getDay(); // 0=Sun
-  dow = dow === 0 ? 6 : dow - 1;        // Mon=0 … Sun=6
-
-  const daysInMonth = new Date(y, m+1, 0).getDate();
-  const todayISO = toISO(new Date());
-  const taskDays = new Set(allTasks.map(t => t.day));
-
-  let html = '';
-  for (let i = 0; i < dow; i++) html += '<div class="cal-cell cal-empty"></div>';
-  for (let d = 1; d <= daysInMonth; d++) {
-    const iso = toISO(new Date(y, m, d));
-    const cls = [
-      'cal-cell',
-      iso === todayISO ? 'cal-today' : '',
-      iso === addDay   ? 'cal-sel'   : '',
-    ].filter(Boolean).join(' ');
-    html += `<button class="${cls}" onclick="calPickDay('${iso}')">${d}${
-      taskDays.has(iso) ? '<span class="cal-dot"></span>' : ''
-    }</button>`;
-  }
-  document.getElementById('calGrid').innerHTML = html;
+  const inp = document.getElementById('datePicker');
+  inp.value = addDay;
+  try { inp.showPicker(); } catch { inp.click(); }
 }
 
-function calPickDay(iso) {
+function jumpToDate(iso) {
+  if (!iso) return;
   addDay = iso;
   weekMonday = getMonday(new Date(iso + 'T12:00:00'));
-  mobileWeeks = 3;
-  closeCalendar();
+  mobileWeeks = 4;
   loadWeek().then(() => {
     setTimeout(() => {
       const el = document.getElementById('tl-' + iso);
