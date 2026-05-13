@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHmac } from 'crypto';
 import { transcribeAudio } from '../lib/transcribe';
-import { extractTasks } from '../lib/llm';
-import { saveTasks } from '../lib/db';
+import { parseIntent } from '../lib/llm';
+import { saveTasks, updateTask, deleteTask } from '../lib/db';
 import { getToday } from '../lib/format';
 import { env } from '../lib/env';
 
@@ -42,17 +42,53 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   if (!userId) { res.status(401).json({ error: 'Unauthorized' }); return; }
 
   try {
-    const { audio_base64, mime_type, day } = req.body as { audio_base64: string; mime_type?: string; day?: string };
+    const { audio_base64, mime_type, day, context_tasks } = req.body as {
+      audio_base64: string;
+      mime_type?: string;
+      day?: string;
+      context_tasks?: Array<{ id: number; text: string; done: boolean; day: string }>;
+    };
     if (!audio_base64) { res.status(400).json({ error: 'No audio' }); return; }
 
     const audioBuffer = Buffer.from(audio_base64, 'base64');
-    const transcribed = await transcribeAudio(audioBuffer, mime_type || 'audio/webm');
+    const transcribed = (await transcribeAudio(audioBuffer, mime_type || 'audio/webm')).trim();
+    if (!transcribed) { res.status(200).json({ transcribed: '', type: 'empty', added: 0 }); return; }
 
     const today = getToday();
-    const tasks = await extractTasks(transcribed.trim(), today);
-    if (tasks.length > 0) await saveTasks(userId, tasks, day || today);
+    const existingTasks = context_tasks ?? [];
+    const intent = await parseIntent(transcribed, existingTasks, today);
 
-    res.status(200).json({ transcribed: transcribed.trim(), added: tasks.length });
+    if (intent.type === 'new_tasks') {
+      if (intent.tasks.length > 0) await saveTasks(userId, intent.tasks, day || today);
+      res.status(200).json({ type: 'new_tasks', transcribed, added: intent.tasks.length });
+      return;
+    }
+
+    // management commands
+    const tomorrow = new Date(today + 'T12:00:00');
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowISO = tomorrow.toISOString().slice(0, 10);
+
+    const results: string[] = [];
+    for (const cmd of intent.commands) {
+      const task = existingTasks[cmd.task_number - 1];
+      if (!task) { results.push(`Задача ${cmd.task_number}: не найдена`); continue; }
+
+      if (cmd.action === 'done') {
+        await updateTask(task.id, userId, { done: true });
+        results.push(`✅ ${task.text}`);
+      } else if (cmd.action === 'delete') {
+        await deleteTask(task.id, userId);
+        results.push(`🗑 ${task.text}`);
+      } else if (cmd.action === 'move') {
+        const targetDay = cmd.date ?? tomorrowISO;
+        await updateTask(task.id, userId, { day: targetDay, done: false });
+        const label = targetDay === tomorrowISO ? 'завтра' : targetDay;
+        results.push(`📅 ${task.text} → ${label}`);
+      }
+    }
+
+    res.status(200).json({ type: 'manage', transcribed, results });
   } catch (err) {
     const msg = err instanceof Error ? err.message : JSON.stringify(err);
     console.error('voice error:', msg);

@@ -293,12 +293,12 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
   <div class="bar">
     <div class="bar-days" id="barDays"></div>
     <div class="bar-row">
-      <button class="mic-btn" id="micBtn" onclick="toggleRecord()" title="Голосовой ввод">🎤</button>
       <div class="inp-wrap">
         <textarea id="inp" rows="1" placeholder="Добавить задачи..."
           oninput="grow(this)" onkeydown="onKey(event)"></textarea>
       </div>
       <button class="send-btn" id="sendBtn" onclick="addTasks(addDay)">↑</button>
+      <button class="mic-btn" id="micBtn" title="Держи для записи">🎤</button>
     </div>
   </div>
 </div>
@@ -329,6 +329,7 @@ function init() {
   }
   if (uid) { show('app'); loadWeek(); }
   else show('setup');
+  setupMic();
 }
 
 function doSetup() {
@@ -490,10 +491,13 @@ async function loadMoreWeeks() {
 }
 
 // ── DRAG & DROP ──
+let _sortables = [];
 function initDragDrop() {
+  _sortables.forEach(s => { try { s.destroy(); } catch {} });
+  _sortables = [];
   const isDesktop = window.innerWidth >= 768;
   document.querySelectorAll('.task-list').forEach(el => {
-    Sortable.create(el, {
+    _sortables.push(Sortable.create(el, {
       group: 'tasks',
       animation: 200,
       delay: isDesktop ? 0 : 400,
@@ -511,7 +515,7 @@ function initDragDrop() {
         const oldDay = evt.from.dataset.day;
         if (newDay && newDay !== oldDay) moveTask(id, newDay);
       }
-    });
+    }));
   });
 }
 
@@ -626,51 +630,62 @@ async function colAddKey(e, day) {
 }
 
 // ── VOICE RECORDING ──
-async function toggleRecord() {
-  if (isRecording) { stopRecord(); return; }
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    mediaRecorder = new MediaRecorder(stream);
-    audioChunks = [];
-    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
-    mediaRecorder.onstop = sendVoice;
-    mediaRecorder.start();
-    isRecording = true;
-    const btn = document.getElementById('micBtn');
-    btn.textContent = '⏹'; btn.classList.add('recording');
-    showToast('Говори... нажми ещё раз чтобы остановить');
-  } catch { showToast('Нет доступа к микрофону'); }
-}
-
-function stopRecord() {
-  if (!mediaRecorder) return;
-  mediaRecorder.stop();
-  mediaRecorder.stream.getTracks().forEach(t => t.stop());
-  isRecording = false;
+function setupMic() {
   const btn = document.getElementById('micBtn');
-  btn.textContent = '🎤'; btn.classList.remove('recording');
+  if (!btn) return;
+  btn.addEventListener('pointerdown', async e => {
+    e.preventDefault();
+    if (isRecording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+      mediaRecorder.ondataavailable = e2 => { if (e2.data.size > 0) audioChunks.push(e2.data); };
+      mediaRecorder.onstop = sendVoice;
+      mediaRecorder.start();
+      isRecording = true;
+      btn.textContent = '🔴'; btn.classList.add('recording');
+      if (navigator.vibrate) navigator.vibrate(40);
+    } catch { showToast('Нет доступа к микрофону'); }
+  });
+  const stop = () => {
+    if (!isRecording || !mediaRecorder) return;
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach(t => t.stop());
+    isRecording = false;
+    btn.textContent = '🎤'; btn.classList.remove('recording');
+  };
+  btn.addEventListener('pointerup', stop);
+  btn.addEventListener('pointercancel', stop);
+  btn.addEventListener('pointerleave', stop);
 }
 
 async function sendVoice() {
   const mimeType = mediaRecorder.mimeType || 'audio/webm';
   const blob = new Blob(audioChunks, { type: mimeType });
+  if (blob.size < 1000) { showToast('Слишком короткое сообщение'); return; }
   showToast('Обрабатываю...');
   const reader = new FileReader();
   reader.onload = async () => {
     const base64 = reader.result.split(',')[1];
     const p = new URLSearchParams(); if (uid) p.set('uid', uid);
+    // Pass all visible tasks as context for management commands
+    const context_tasks = allTasks.map(t => ({ id: t.id, text: t.text, done: t.done, day: t.day }));
     try {
       const r = await fetch(`${VOICE_API}?${p}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...apiHdr() },
-        body: JSON.stringify({ audio_base64: base64, mime_type: mimeType, day: addDay })
+        body: JSON.stringify({ audio_base64: base64, mime_type: mimeType, day: addDay, context_tasks })
       });
       const d = await r.json();
-      if (d.added > 0) {
-        showToast(`✅ ${d.transcribed}`);
+      if (d.type === 'new_tasks') {
+        showToast(d.added > 0 ? `✅ ${d.transcribed}` : `Не распознаны задачи`);
+        if (d.added > 0) await loadWeek();
+      } else if (d.type === 'manage') {
+        showToast(d.results?.join('\n') || '✅ Готово');
         await loadWeek();
       } else {
-        showToast(d.transcribed ? `Не распознаны задачи: "${d.transcribed}"` : 'Не распознаны задачи');
+        showToast('Не распознано. Попробуй ещё раз.');
       }
     } catch { showToast('Ошибка. Попробуй ещё раз.'); }
   };
