@@ -77,7 +77,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
 .task-row{display:flex;align-items:center;padding:10px 12px;gap:8px;
   border-bottom:.5px solid var(--sep);background:var(--card);transition:opacity .15s}
 .task-row:last-child{border-bottom:none}
-.task-row.sortable-ghost{opacity:.25}
+.task-row.sortable-ghost{opacity:.2;background:var(--fill)}
+.task-row.sortable-chosen{background:var(--fill);transition:background .15s}
 .task-row.sortable-drag{background:var(--card);box-shadow:0 6px 28px rgba(0,0,0,.2);
   border-radius:12px;border-bottom:none!important;opacity:1!important}
 
@@ -87,6 +88,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
   color:var(--t3);cursor:grab;touch-action:none;user-select:none;flex-shrink:0;
   font-size:17px;border-radius:8px;transition:background .1s}
 .drag-handle:active{cursor:grabbing;background:var(--fill)}
+@media(max-width:767px){.drag-handle{display:none}}
 
 /* ── CHECK ── */
 .check{width:22px;height:22px;border-radius:50%;border:2px solid var(--t3);
@@ -455,16 +457,20 @@ function renderWeek() {
 
 // ── DRAG & DROP ──
 function initDragDrop() {
+  const isDesktop = window.innerWidth >= 768;
   document.querySelectorAll('.task-list').forEach(el => {
     Sortable.create(el, {
       group: 'tasks',
       animation: 200,
-      delay: 120,
+      delay: isDesktop ? 0 : 400,
       delayOnTouchOnly: true,
-      touchStartThreshold: 4,
-      handle: '.drag-handle',
+      touchStartThreshold: 3,
+      handle: isDesktop ? '.drag-handle' : undefined,
+      filter: '.check,.act-btn',
+      preventOnFilter: true,
       ghostClass: 'sortable-ghost',
       dragClass: 'sortable-drag',
+      chosenClass: 'sortable-chosen',
       onEnd(evt) {
         const id = parseInt(evt.item.dataset.id);
         const newDay = evt.to.dataset.day;
