@@ -34,9 +34,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
   if (req.method !== 'POST') return;
 
-  // Проверяем секрет webhook
+  // Проверяем секрет webhook (если выставлен)
   const secret = req.headers['x-telegram-bot-api-secret-token'];
-  if (secret !== env.TELEGRAM_WEBHOOK_SECRET) {
+  if (env.TELEGRAM_WEBHOOK_SECRET && secret !== env.TELEGRAM_WEBHOOK_SECRET) {
     console.warn('Неверный webhook secret');
     return;
   }
