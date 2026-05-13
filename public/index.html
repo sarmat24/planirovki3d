@@ -128,6 +128,16 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
   justify-content:center;flex-shrink:0;transition:opacity .1s}
 .send-btn:active{opacity:.8}
 .send-btn:disabled{opacity:.35}
+.mic-btn{width:36px;height:36px;border-radius:50%;background:var(--fill);border:none;
+  font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  flex-shrink:0;transition:background .2s,transform .2s}
+.mic-btn:active{opacity:.8}
+.mic-btn.recording{background:var(--red);animation:mic-pulse 1s ease-in-out infinite}
+@keyframes mic-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.15)}}
+.load-more-btn{display:block;width:calc(100% - 24px);margin:12px 12px 16px;
+  padding:13px;background:var(--fill);border:none;border-radius:14px;
+  font-size:15px;font-weight:600;font-family:inherit;color:var(--t2);cursor:pointer}
+.load-more-btn:active{opacity:.7}
 
 /* ── SHEET ── */
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;
@@ -279,6 +289,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
   <div class="bar">
     <div class="bar-days" id="barDays"></div>
     <div class="bar-row">
+      <button class="mic-btn" id="micBtn" onclick="toggleRecord()" title="Голосовой ввод">🎤</button>
       <div class="inp-wrap">
         <textarea id="inp" rows="1" placeholder="Добавить задачи..."
           oninput="grow(this)" onkeydown="onKey(event)"></textarea>
@@ -295,11 +306,14 @@ const TG = window.Telegram?.WebApp;
 if (TG) { TG.ready(); TG.expand(); }
 
 const API = '/api/webapp';
+const VOICE_API = '/api/voice';
 let uid = null, initData = '';
 let allTasks = [];
 let weekMonday = getMonday(new Date());
 let addDay = toISO(new Date());
 let editId = null, delId = null;
+let mobileWeeks = 3;
+let mediaRecorder = null, audioChunks = [], isRecording = false;
 
 // ── INIT ──
 function init() {
@@ -348,13 +362,15 @@ function toISO(d) {
   const day = String(d.getDate()).padStart(2,'0');
   return `${y}-${m}-${day}`;
 }
-function weekDays(mon) {
-  return Array.from({length:7},(_,i)=>{const d=new Date(mon);d.setDate(d.getDate()+i);return d;});
+function weekDays(mon, count) {
+  const n = count ?? (window.innerWidth < 768 ? mobileWeeks * 7 : 7);
+  return Array.from({length:n},(_,i)=>{const d=new Date(mon);d.setDate(d.getDate()+i);return d;});
 }
 
 function changeWeek(dir) {
   weekMonday = new Date(weekMonday);
-  weekMonday.setDate(weekMonday.getDate()+dir*7);
+  const step = window.innerWidth < 768 ? mobileWeeks * 7 : 7;
+  weekMonday.setDate(weekMonday.getDate() + dir * step);
   loadWeek();
 }
 
@@ -447,6 +463,11 @@ function renderWeek() {
     </div>`;
   }).join('');
 
+  if (!isDesktop) {
+    document.getElementById('weekView').insertAdjacentHTML('beforeend',
+      `<button class="load-more-btn" onclick="loadMoreWeeks()">Загрузить ещё →</button>`);
+  }
+
   initDragDrop();
 
   // Scroll to today on mobile
@@ -454,6 +475,11 @@ function renderWeek() {
     const el = document.getElementById(`tl-${todayISO}`);
     if (el) setTimeout(()=>el.closest('.day-sec').scrollIntoView({behavior:'smooth',block:'start'}),100);
   }
+}
+
+async function loadMoreWeeks() {
+  mobileWeeks += 2;
+  await loadWeek();
 }
 
 // ── DRAG & DROP ──
@@ -590,6 +616,58 @@ async function colAddKey(e, day) {
     await loadWeek();
   } catch { showToast('Ошибка'); }
   finally { inp.disabled=false; inp.focus(); }
+}
+
+// ── VOICE RECORDING ──
+async function toggleRecord() {
+  if (isRecording) { stopRecord(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = sendVoice;
+    mediaRecorder.start();
+    isRecording = true;
+    const btn = document.getElementById('micBtn');
+    btn.textContent = '⏹'; btn.classList.add('recording');
+    showToast('Говори... нажми ещё раз чтобы остановить');
+  } catch { showToast('Нет доступа к микрофону'); }
+}
+
+function stopRecord() {
+  if (!mediaRecorder) return;
+  mediaRecorder.stop();
+  mediaRecorder.stream.getTracks().forEach(t => t.stop());
+  isRecording = false;
+  const btn = document.getElementById('micBtn');
+  btn.textContent = '🎤'; btn.classList.remove('recording');
+}
+
+async function sendVoice() {
+  const mimeType = mediaRecorder.mimeType || 'audio/webm';
+  const blob = new Blob(audioChunks, { type: mimeType });
+  showToast('Обрабатываю...');
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const base64 = reader.result.split(',')[1];
+    const p = new URLSearchParams(); if (uid) p.set('uid', uid);
+    try {
+      const r = await fetch(`${VOICE_API}?${p}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...apiHdr() },
+        body: JSON.stringify({ audio_base64: base64, mime_type: mimeType, day: addDay })
+      });
+      const d = await r.json();
+      if (d.added > 0) {
+        showToast(`✅ ${d.transcribed}`);
+        await loadWeek();
+      } else {
+        showToast(d.transcribed ? `Не распознаны задачи: "${d.transcribed}"` : 'Не распознаны задачи');
+      }
+    } catch { showToast('Ошибка. Попробуй ещё раз.'); }
+  };
+  reader.readAsDataURL(blob);
 }
 
 // ── HELPERS ──
