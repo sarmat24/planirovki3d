@@ -29,11 +29,13 @@ export async function saveTasks(userId: number, tasks: Task[], day: string): Pro
 }
 
 export async function getTodayTasks(userId: number, day: string): Promise<DbTask[]> {
+  // Показываем задачи за сегодня + невыполненные за прошлые дни
   const { data, error } = await supabase
     .from('tasks')
     .select('*')
     .eq('user_id', userId)
-    .eq('day', day)
+    .or(`day.eq.${day},done.eq.false`)
+    .order('day', { ascending: true })
     .order('time', { ascending: true, nullsFirst: false })
     .order('created', { ascending: true });
 
@@ -51,12 +53,11 @@ export async function markDone(taskId: number, userId: number): Promise<void> {
   if (error) throw new Error(`Ошибка обновления задачи: ${JSON.stringify(error)}`);
 }
 
-export async function clearTodayTasks(userId: number, day: string): Promise<number> {
+export async function clearTodayTasks(userId: number, _day: string): Promise<number> {
   const { data, error } = await supabase
     .from('tasks')
     .delete()
     .eq('user_id', userId)
-    .eq('day', day)
     .select('id');
 
   if (error) throw new Error(`Ошибка удаления задач: ${JSON.stringify(error)}`);
