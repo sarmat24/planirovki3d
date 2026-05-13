@@ -339,7 +339,12 @@ function getMonday(d) {
   r.setDate(r.getDate()-(day===0?6:day-1));
   return r;
 }
-function toISO(d) { return d.toISOString().split('T')[0]; }
+function toISO(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
 function weekDays(mon) {
   return Array.from({length:7},(_,i)=>{const d=new Date(mon);d.setDate(d.getDate()+i);return d;});
 }
