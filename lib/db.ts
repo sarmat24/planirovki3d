@@ -87,6 +87,16 @@ export async function deleteTask(taskId: number, userId: number): Promise<void> 
   if (error) throw new Error(`Ошибка удаления задачи: ${JSON.stringify(error)}`);
 }
 
+export async function getUsersWithTasksOnDay(day: string): Promise<number[]> {
+  const { data, error } = await supabase
+    .from('tasks')
+    .select('user_id')
+    .eq('day', day)
+    .eq('done', false);
+  if (error) throw new Error(`Ошибка получения пользователей: ${JSON.stringify(error)}`);
+  return [...new Set((data ?? []).map(r => r.user_id as number))];
+}
+
 export async function clearTodayTasks(userId: number, _day: string): Promise<number> {
   const { data, error } = await supabase
     .from('tasks')

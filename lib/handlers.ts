@@ -1,6 +1,6 @@
 import { sendMessage } from './telegram';
-import { getTodayTasks, markDone, clearTodayTasks, saveTasks } from './db';
-import { extractTasks } from './llm';
+import { getTodayTasks, markDone, clearTodayTasks, saveTasks, updateTask, deleteTask } from './db';
+import { extractTasks, parseIntent } from './llm';
 import { formatTaskList, formatSavedTasks, getToday } from './format';
 
 const APP_URL = 'https://planirovki3d-git-main-alika-s-projects1.vercel.app';
@@ -71,13 +71,80 @@ export async function handleClear(chatId: number, userId: number): Promise<void>
 export async function handleText(chatId: number, userId: number, text: string): Promise<void> {
   await sendMessage(chatId, 'Обрабатываю...');
   const today = getToday();
-  const tasks = await extractTasks(text, today);
+  const existing = await getTodayTasks(userId, today);
+  const intent = await parseIntent(text, existing, today);
 
-  if (tasks.length === 0) {
-    await sendMessage(chatId, 'Не удалось распознать задачи. Опиши планы подробнее.');
+  if (intent.type === 'new_tasks') {
+    if (!intent.tasks.length) {
+      await sendMessage(chatId, 'Не удалось распознать задачи. Опиши планы подробнее.');
+      return;
+    }
+    await saveTasks(userId, intent.tasks, today);
+    await sendMessage(chatId, formatSavedTasks(intent.tasks, today));
     return;
   }
 
-  await saveTasks(userId, tasks, today);
-  await sendMessage(chatId, formatSavedTasks(tasks, today));
+  // manage commands
+  const { commands } = intent;
+  if (!commands.length) {
+    await sendMessage(chatId, 'Не понял команду. Попробуй ещё раз.');
+    return;
+  }
+
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowISO = tomorrow.toISOString().split('T')[0]!;
+
+  const results: string[] = [];
+  for (const cmd of commands) {
+    const task = existing[cmd.task_number - 1];
+    if (!task) { results.push(`Задача ${cmd.task_number}: не найдена`); continue; }
+
+    if (cmd.action === 'done') {
+      await updateTask(task.id, userId, { done: true });
+      results.push(`✅ Выполнено: ${task.text}`);
+    } else if (cmd.action === 'delete') {
+      await deleteTask(task.id, userId);
+      results.push(`🗑 Удалено: ${task.text}`);
+    } else if (cmd.action === 'move') {
+      const targetDay = cmd.date ?? tomorrowISO;
+      await updateTask(task.id, userId, { day: targetDay, done: false });
+      const label = targetDay === tomorrowISO ? 'завтра' : targetDay;
+      results.push(`📅 Перенесено на ${label}: ${task.text}`);
+    }
+  }
+
+  await sendMessage(chatId, results.join('\n'));
+}
+
+export async function handleDailyDigest(chatId: number, userId: number): Promise<void> {
+  const today = getToday();
+  const tasks = await getTodayTasks(userId, today);
+  const todayOnly = tasks.filter(t => t.day === today);
+
+  if (todayOnly.length === 0) {
+    await sendMessage(chatId, '📊 На сегодня задач не было. Хорошего вечера!');
+    return;
+  }
+
+  const done = todayOnly.filter(t => t.done);
+  const pending = todayOnly.filter(t => !t.done);
+
+  const all = [...done, ...pending];
+  const lines = all.map((t, i) => `${i + 1}. ${t.done ? '✅' : '⬜'} ${t.text}`).join('\n');
+
+  let text = `📊 Итоги дня — ${formatDate(today)}\n\n${lines}`;
+
+  if (pending.length > 0) {
+    text += `\n\n${pending.length} задач не выполнено. Скажи голосом что перенести, что удалить. Например: "четвёртую перенеси на завтра, пятую удали"`;
+  } else {
+    text += '\n\n🎉 Все задачи выполнены! Отличный день!';
+  }
+
+  await sendMessage(chatId, text);
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso + 'T12:00:00');
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
 }
