@@ -3,15 +3,18 @@ import { env } from './env';
 export interface Task {
   text: string;
   time: string | null;
+  date: string | null; // ISO YYYY-MM-DD, null = default day
 }
 
-const SYSTEM = `Ты помощник по планированию дня. Пользователь описывает свои планы голосом или текстом.
-Извлеки список задач из сообщения и верни JSON вида:
-{"tasks": [{"text": "название задачи", "time": "HH:MM или null"}]}
-Время указывай только если оно явно упомянуто, иначе null.
-Отвечай только валидным JSON, без объяснений.`;
+const makeSystem = (today: string) =>
+  `Ты помощник по планированию. Сегодня: ${today}.
+Из текста пользователя извлеки список задач и верни JSON:
+{"tasks": [{"text": "название", "time": "HH:MM или null", "date": "YYYY-MM-DD или null"}]}
+- time: только если явно указано время
+- date: если упомянут конкретный день (завтра, послезавтра, в пятницу, через неделю и т.д.) — вычисли точную дату. Иначе null (= сегодня).
+Только JSON без пояснений.`;
 
-export async function extractTasks(input: string): Promise<Task[]> {
+export async function extractTasks(input: string, today: string): Promise<Task[]> {
   const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -23,7 +26,7 @@ export async function extractTasks(input: string): Promise<Task[]> {
       temperature: 0.3,
       response_format: { type: 'json_object' },
       messages: [
-        { role: 'system', content: SYSTEM },
+        { role: 'system', content: makeSystem(today) },
         { role: 'user', content: input },
       ],
     }),
@@ -38,11 +41,8 @@ export async function extractTasks(input: string): Promise<Task[]> {
   const content = data.choices[0]?.message?.content ?? '{}';
 
   let parsed: unknown;
-  try {
-    parsed = JSON.parse(content);
-  } catch {
-    throw new Error(`Не удалось разобрать ответ LLM: ${content}`);
-  }
+  try { parsed = JSON.parse(content); }
+  catch { throw new Error(`Не удалось разобрать ответ LLM: ${content}`); }
 
   if (Array.isArray(parsed)) return parsed as Task[];
   if (parsed && typeof parsed === 'object' && 'tasks' in parsed) {

@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { env, validateEnv } from '../lib/env';
 import { sendMessage, getFile, downloadFile } from '../lib/telegram';
 import { transcribeAudio } from '../lib/transcribe';
-import { handleStart, handleToday, handleDone, handleClear, handleText, handleMyId } from '../lib/handlers';
+import { handleStart, handleToday, handleDone, handleClear, handleText, handleMyId, handleWebApp } from '../lib/handlers';
 
 interface TgFrom {
   id: number;
@@ -69,6 +69,9 @@ async function processUpdate(req: VercelRequest): Promise<void> {
         break;
       case '/myid':
         await handleMyId(chatId, userId);
+        break;
+      case '/app':
+        await handleWebApp(chatId);
         break;
       default:
         if (!msg.text.startsWith('/')) {
