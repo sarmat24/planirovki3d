@@ -1,7 +1,6 @@
 {
   "functions": {
-    "api/telegram.ts": {
-      "maxDuration": 60
-    }
+    "api/telegram.ts": { "maxDuration": 60 },
+    "api/webapp.ts": { "maxDuration": 30 }
   }
 }

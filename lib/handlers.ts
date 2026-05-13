@@ -27,7 +27,9 @@ export async function handleDone(chatId: number, userId: number, args: string): 
     return;
   }
 
+  const pending = tasks.filter(t => !t.done);
   const num = parseInt(args.trim(), 10);
+
   if (!num || num < 1 || num > tasks.length) {
     await sendMessage(chatId,
       `Укажи номер задачи. Например: /done 2\n\n${formatTaskList(tasks)}`
@@ -36,8 +38,20 @@ export async function handleDone(chatId: number, userId: number, args: string): 
   }
 
   const task = tasks[num - 1]!;
+  if (task.done) {
+    await sendMessage(chatId, `Задача уже выполнена.\n\n${formatTaskList(tasks)}`);
+    return;
+  }
+
   await markDone(task.id, userId);
-  await sendMessage(chatId, `Задача "${task.text}" отмечена выполненной!`);
+  const updated = await getTodayTasks(userId, getToday());
+  await sendMessage(chatId, `Выполнено!\n\n${formatTaskList(updated)}`);
+}
+
+export async function handleMyId(chatId: number, userId: number): Promise<void> {
+  await sendMessage(chatId,
+    `Твой Telegram ID: ${userId}\n\nИспользуй его для входа на сайт планировщика.`
+  );
 }
 
 export async function handleClear(chatId: number, userId: number): Promise<void> {
