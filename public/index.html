@@ -75,7 +75,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
 .task-list.empty-day{background:none}
 .day-empty{padding:10px 14px;color:var(--t3);font-size:13px;font-style:italic}
 .task-row{display:flex;align-items:center;padding:10px 12px;gap:8px;
-  border-bottom:.5px solid var(--sep);background:var(--card);transition:opacity .15s}
+  border-bottom:.5px solid var(--sep);background:var(--card);transition:opacity .15s;
+  user-select:none;-webkit-user-select:none}
 .task-row:last-child{border-bottom:none}
 .task-row.sortable-ghost{opacity:.2;background:var(--fill)}
 .task-row.sortable-chosen{background:var(--fill);transition:background .15s}
