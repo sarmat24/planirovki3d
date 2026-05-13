@@ -184,6 +184,27 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
 @keyframes spin{to{transform:rotate(360deg)}}
 .hidden{display:none!important}
 
+/* ── CALENDAR PICKER ── */
+.cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.cal-nav-btn{background:none;border:none;color:var(--blue);font-size:24px;
+  padding:4px 12px;cursor:pointer;line-height:1;border-radius:8px}
+.cal-nav-btn:active{background:var(--fill)}
+.cal-nav-title{font-size:16px;font-weight:700;text-align:center;flex:1;text-transform:capitalize}
+.cal-dow{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;margin-bottom:4px}
+.cal-dow span{font-size:11px;font-weight:600;color:var(--t3);padding:4px 0}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cal-cell{border:none;border-radius:9px;background:none;font-size:15px;cursor:pointer;
+  color:var(--t1);padding:0;aspect-ratio:1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;position:relative;font-family:inherit;
+  touch-action:manipulation}
+.cal-cell:active{background:var(--fill)}
+.cal-cell.cal-empty{pointer-events:none}
+.cal-cell.cal-today{color:var(--blue);font-weight:700}
+.cal-cell.cal-sel{background:var(--blue);color:#fff;border-radius:50%}
+.cal-dot{position:absolute;bottom:3px;width:4px;height:4px;
+  border-radius:50%;background:var(--blue)}
+.cal-cell.cal-sel .cal-dot{background:rgba(255,255,255,.8)}
+
 /* ══════════════════════════════
    DESKTOP  (≥ 768px)
 ══════════════════════════════ */
@@ -191,9 +212,9 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
   .hdr{padding:16px 24px}
   .hdr-title{font-size:18px}
 
-  /* Replace scrollable list with 7-column grid */
-  .week-scroll{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;
-    padding:14px;overflow:hidden;align-items:start}
+  /* 7-column grid, multiple rows for multi-week */
+  .week-scroll{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:max-content;
+    gap:10px;padding:14px;overflow-y:auto;align-items:start;padding-bottom:0!important}
 
   /* Each day fills its column */
   .day-sec{margin:0;display:flex;flex-direction:column;
@@ -250,7 +271,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
 <div id="app" class="hidden">
   <div class="hdr">
     <button class="nav-btn" onclick="changeWeek(-1)">‹</button>
-    <span class="hdr-title" id="weekLabel"></span>
+    <span class="hdr-title" id="weekLabel" onclick="openCalendar()" style="cursor:pointer"></span>
+    <button class="nav-btn" onclick="openCalendar()">📅</button>
     <button class="nav-btn" onclick="changeWeek(1)">›</button>
   </div>
 
@@ -272,6 +294,26 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--t1);
       <div class="sheet-btns">
         <button class="sheet-btn cancel" onclick="closeEdit()">Отмена</button>
         <button class="sheet-btn save" onclick="saveEdit()">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calendar picker -->
+  <div class="overlay hidden" id="calOverlay" onclick="if(event.target===this)closeCalendar()">
+    <div class="sheet">
+      <div class="sheet-drag"></div>
+      <div class="cal-nav">
+        <button class="cal-nav-btn" onclick="calPrev()">‹</button>
+        <span class="cal-nav-title" id="calMonthLabel"></span>
+        <button class="cal-nav-btn" onclick="calNext()">›</button>
+      </div>
+      <div class="cal-dow">
+        <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span>
+        <span>Пт</span><span>Сб</span><span>Вс</span>
+      </div>
+      <div id="calGrid" class="cal-grid"></div>
+      <div style="margin-top:16px">
+        <button class="sheet-btn cancel" onclick="closeCalendar()">Закрыть</button>
       </div>
     </div>
   </div>
@@ -368,14 +410,13 @@ function toISO(d) {
   return `${y}-${m}-${day}`;
 }
 function weekDays(mon, count) {
-  const n = count ?? (window.innerWidth < 768 ? mobileWeeks * 7 : 7);
+  const n = count ?? mobileWeeks * 7;
   return Array.from({length:n},(_,i)=>{const d=new Date(mon);d.setDate(d.getDate()+i);return d;});
 }
 
 function changeWeek(dir) {
   weekMonday = new Date(weekMonday);
-  const step = window.innerWidth < 768 ? mobileWeeks * 7 : 7;
-  weekMonday.setDate(weekMonday.getDate() + dir * step);
+  weekMonday.setDate(weekMonday.getDate() + dir * 7);
   loadWeek();
 }
 
@@ -627,6 +668,59 @@ async function colAddKey(e, day) {
     await loadWeek();
   } catch { showToast('Ошибка'); }
   finally { inp.disabled=false; inp.focus(); }
+}
+
+// ── CALENDAR PICKER ──
+let calMonth = new Date();
+
+function openCalendar() {
+  calMonth = new Date(weekMonday.getFullYear(), weekMonday.getMonth(), 1);
+  renderCal();
+  document.getElementById('calOverlay').classList.remove('hidden');
+}
+function closeCalendar() { document.getElementById('calOverlay').classList.add('hidden'); }
+function calPrev() { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth()-1, 1); renderCal(); }
+function calNext() { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth()+1, 1); renderCal(); }
+
+function renderCal() {
+  const y = calMonth.getFullYear(), m = calMonth.getMonth();
+  document.getElementById('calMonthLabel').textContent =
+    new Date(y, m, 1).toLocaleDateString('ru-RU', {month:'long', year:'numeric'});
+
+  let dow = new Date(y, m, 1).getDay(); // 0=Sun
+  dow = dow === 0 ? 6 : dow - 1;        // Mon=0 … Sun=6
+
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const todayISO = toISO(new Date());
+  const taskDays = new Set(allTasks.map(t => t.day));
+
+  let html = '';
+  for (let i = 0; i < dow; i++) html += '<div class="cal-cell cal-empty"></div>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = toISO(new Date(y, m, d));
+    const cls = [
+      'cal-cell',
+      iso === todayISO ? 'cal-today' : '',
+      iso === addDay   ? 'cal-sel'   : '',
+    ].filter(Boolean).join(' ');
+    html += `<button class="${cls}" onclick="calPickDay('${iso}')">${d}${
+      taskDays.has(iso) ? '<span class="cal-dot"></span>' : ''
+    }</button>`;
+  }
+  document.getElementById('calGrid').innerHTML = html;
+}
+
+function calPickDay(iso) {
+  addDay = iso;
+  weekMonday = getMonday(new Date(iso + 'T12:00:00'));
+  mobileWeeks = 3;
+  closeCalendar();
+  loadWeek().then(() => {
+    setTimeout(() => {
+      const el = document.getElementById('tl-' + iso);
+      if (el) el.closest('.day-sec')?.scrollIntoView({behavior:'smooth', block:'start'});
+    }, 300);
+  });
 }
 
 // ── VOICE RECORDING ──
