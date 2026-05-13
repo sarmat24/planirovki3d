@@ -28,10 +28,7 @@ interface TgUpdate {
   message?: TgMessage;
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
-  // Всегда возвращаем 200 — иначе Telegram будет повторять запросы
-  res.status(200).json({ ok: true });
-
+async function processUpdate(req: VercelRequest): Promise<void> {
   if (req.method !== 'POST') return;
 
   // Проверяем секрет webhook (если выставлен)
@@ -41,57 +38,68 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     return;
   }
 
-  try {
-    validateEnv();
+  validateEnv();
 
-    const update = req.body as TgUpdate;
-    const msg = update.message;
-    if (!msg) return;
+  const update = req.body as TgUpdate;
+  const msg = update.message;
+  if (!msg) return;
 
-    const chatId = msg.chat.id;
-    const userId = msg.from?.id;
-    if (!userId) return;
+  const chatId = msg.chat.id;
+  const userId = msg.from?.id;
+  if (!userId) return;
 
-    // Текстовые команды и сообщения
-    if (msg.text) {
-      const spaceIdx = msg.text.indexOf(' ');
-      const command = spaceIdx >= 0 ? msg.text.slice(0, spaceIdx) : msg.text;
-      const args = spaceIdx >= 0 ? msg.text.slice(spaceIdx + 1) : '';
+  // Текстовые команды и сообщения
+  if (msg.text) {
+    const spaceIdx = msg.text.indexOf(' ');
+    const command = spaceIdx >= 0 ? msg.text.slice(0, spaceIdx) : msg.text;
+    const args = spaceIdx >= 0 ? msg.text.slice(spaceIdx + 1) : '';
 
-      switch (command) {
-        case '/start':
-          await handleStart(chatId);
-          break;
-        case '/today':
-          await handleToday(chatId, userId);
-          break;
-        case '/done':
-          await handleDone(chatId, userId, args);
-          break;
-        case '/clear':
-          await handleClear(chatId, userId);
-          break;
-        default:
-          if (!msg.text.startsWith('/')) {
-            await handleText(chatId, userId, msg.text);
-          }
-      }
-      return;
+    switch (command) {
+      case '/start':
+        await handleStart(chatId);
+        break;
+      case '/today':
+        await handleToday(chatId, userId);
+        break;
+      case '/done':
+        await handleDone(chatId, userId, args);
+        break;
+      case '/clear':
+        await handleClear(chatId, userId);
+        break;
+      default:
+        if (!msg.text.startsWith('/')) {
+          await handleText(chatId, userId, msg.text);
+        }
     }
-
-    // Голосовые сообщения
-    if (msg.voice) {
-      await sendMessage(chatId, 'Обрабатываю голосовое сообщение...');
-
-      const file = await getFile(msg.voice.file_id);
-      const audio = await downloadFile(file.file_path);
-      const transcribed = await transcribeAudio(audio, msg.voice.mime_type ?? 'audio/ogg');
-
-      await sendMessage(chatId, `Распознал: "${transcribed}"`);
-      await handleText(chatId, userId, transcribed);
-    }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message + '\n' + err.stack : JSON.stringify(err);
-    console.error('Webhook error:', msg);
+    return;
   }
+
+  // Голосовые сообщения
+  if (msg.voice) {
+    console.log('Voice: start, file_id=', msg.voice.file_id);
+    await sendMessage(chatId, 'Обрабатываю голосовое сообщение...');
+
+    console.log('Voice: getFile');
+    const file = await getFile(msg.voice.file_id);
+    console.log('Voice: downloadFile', file.file_path);
+    const audio = await downloadFile(file.file_path);
+    console.log('Voice: transcribe, bytes=', audio.length);
+    const transcribed = await transcribeAudio(audio, msg.voice.mime_type ?? 'audio/ogg');
+    console.log('Voice: transcribed=', transcribed);
+
+    await sendMessage(chatId, `Распознал: "${transcribed}"`);
+    await handleText(chatId, userId, transcribed);
+  }
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+  try {
+    await processUpdate(req);
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message + '\n' + err.stack : JSON.stringify(err);
+    console.error('Webhook error:', errMsg);
+  }
+  // Всегда возвращаем 200 в конце — после обработки
+  res.status(200).json({ ok: true });
 }
