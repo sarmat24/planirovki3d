@@ -2,7 +2,7 @@ import { env } from './env';
 
 export async function transcribeAudio(audioBuffer: Buffer, mimeType: string): Promise<string> {
   const formData = new FormData();
-  const blob = new Blob([audioBuffer], { type: mimeType || 'audio/ogg' });
+  const blob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType || 'audio/ogg' });
   formData.append('file', blob, 'audio.ogg');
   formData.append('model', 'whisper-large-v3');
   formData.append('language', 'ru');
