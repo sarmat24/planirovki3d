@@ -91,6 +91,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       await handleText(chatId, userId, transcribed);
     }
   } catch (err) {
-    console.error('Webhook error:', JSON.stringify(err));
+    const msg = err instanceof Error ? err.message + '\n' + err.stack : JSON.stringify(err);
+    console.error('Webhook error:', msg);
   }
 }
