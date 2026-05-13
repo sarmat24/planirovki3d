@@ -3,7 +3,7 @@ import { getTodayTasks, markDone, clearTodayTasks, saveTasks, updateTask, delete
 import { extractTasks, parseIntent } from './llm';
 import { formatTaskList, formatSavedTasks, getToday } from './format';
 
-const APP_URL = 'https://planirovki3d-git-main-alika-s-projects1.vercel.app';
+const APP_URL = 'https://planirovki3d-git-main-alika-s-projects1.vercel.app/?v=20260514';
 
 const appButton = {
   reply_markup: {
